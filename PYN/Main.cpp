@@ -1,7 +1,7 @@
-#include "Base.hpp"
+#include "TCPClient.hpp"
 
 int main() {
-	Base base;
+	TCPClient tcpClient;
 
 	return 0;
 }
