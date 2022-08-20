@@ -1,12 +1,40 @@
 #pragma once
 
-#define WIN32_LEAN_AND_MEAN
-
 #include <string>
+
+#ifdef _WIN32
+
+#define WIN32_LEAN_AND_MEAN
 
 #include <WinSock2.h>
 #include <WS2tcpip.h>
 #pragma comment(lib, "WS2_32.lib")
+
+#define errnum ::h_errno
+#define CLOSE_SOCKET(socket) ::closesocket(socket)
+
+#define SHUTDOWN_RECEIVE SD_RECEIVE
+#define SHUTDOWN_SEND SD_SEND
+#define SHUTDOWN_BOTH SD_BOTH
+
+#elif defined(__linux__)
+
+#include <errno.h>
+#include <string.h>
+
+#define errnum errno
+#define CLOSE_SOCKET(socket) ::close(socket)
+
+#define SOCKET ::std::uint64_t
+
+#define INVALID_SOCKET 0
+#define SOCKET_ERROR -1
+
+#define SHUTDOWN_RECEIVE SHUT_RD
+#define SHUTDOWN_SEND SHUT_WR
+#define SHUTDOWN_BOTH SHUT_RDWR
+
+#endif // OS
 
 class Base
 {
@@ -19,24 +47,22 @@ public:
 		Initialize();
 	}
 
-	inline Base& operator=(const Base&) {
+	inline auto& operator=(const Base&) {
 		Initialize();
+		return *this;
 	}
 
 	inline Base(Base&&) noexcept {
 		Initialize();
 	}
 
-	inline Base& operator=(Base&&) noexcept {
+	inline auto& operator=(Base&&) noexcept {
 		Initialize();
+		return *this;
 	}
 
 	inline ~Base() {
 		Uninitialize();
-	}
-
-	inline const auto IsInitialized() const {
-		return mIsInitialized;
 	}
 
 	inline const auto GetErrorCode() const {
@@ -47,9 +73,15 @@ public:
 		return mErrorMessage;
 	}
 
+#ifdef _WIN32
+	inline const auto IsInitialized() const {
+		return mIsInitialized;
+	}
+
 	inline const auto& GetWSADATA() const {
 		return mWSADATA;
 	}
+#endif // _WIN32
 
 	inline ::std::string GetErrorMessageFromErrorCode(const ::std::int32_t errorCode) const
 	{
@@ -57,6 +89,9 @@ public:
 			return "";
 		}
 
+		::std::string errorMessageAsString;
+
+#ifdef _WIN32
 		char* errorMessage = nullptr;
 		const auto size = ::FormatMessageA(
 			FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
@@ -68,8 +103,15 @@ public:
 			nullptr
 		);
 
-		::std::string errorMessageAsString(errorMessage, size);
+		errorMessageAsString.assign(errorMessage, size);
 		::LocalFree(errorMessage);
+
+#elif defined(__linux__)
+
+		errorMessageAsString.assign(strerror(errnum));
+
+#endif // OS
+
 		return errorMessageAsString;
 	}
 
@@ -79,102 +121,63 @@ public:
 
 		hint.sin_family = family;
 		hint.sin_port = ::htons(port);
-		if (::inet_pton(family, address, &hint.sin_addr) == -1) {
-			mErrorCode = ::WSAGetLastError();
-			mErrorMessage = "Hint creation failed with error: " + GetErrorMessageFromErrorCode(mErrorCode);
-		}
+		CheckAndStoreError(::inet_pton(family, address, &hint.sin_addr) == -1, "inet_pton");
 
 		return hint;
 	}
 
 	inline const auto CreateSocket(const ::std::int32_t af, const ::std::int32_t type, const ::std::int32_t protocol) {
 		const auto socket = ::socket(af, type, protocol);
-		if (socket == INVALID_SOCKET) {
-			mErrorCode = ::WSAGetLastError();
-			mErrorMessage = "Socket creation failed with error: " + GetErrorMessageFromErrorCode(mErrorCode);
-		}
-
+		CheckAndStoreError(socket == INVALID_SOCKET, "socket");
 		return socket;
 	}
 
 	inline const bool Connect(const ::SOCKET socket, const struct ::sockaddr_in& hint) {
-		mErrorCode = ::connect(socket, (struct ::sockaddr*) & hint, sizeof(hint));
-		if (mErrorCode == SOCKET_ERROR) {
-			mErrorCode = ::WSAGetLastError();
-			mErrorMessage = "Connecting failed with error: " + GetErrorMessageFromErrorCode(mErrorCode);
-		}
-
-		return mErrorCode != SOCKET_ERROR;
+		const auto result = ::connect(socket, (struct ::sockaddr*) & hint, sizeof(hint));
+		CheckAndStoreError(result == SOCKET_ERROR, "connect");
+		return !result;
 	}
 
 	inline const auto Send(const ::SOCKET socket, const char* buffer, const ::std::int32_t length, const ::std::int32_t flags) {
 		const auto bytesSent = ::send(socket, buffer, length, flags);
-		if (bytesSent == SOCKET_ERROR) {
-			mErrorCode = ::WSAGetLastError();
-			mErrorMessage = "Sending failed with error: " + GetErrorMessageFromErrorCode(mErrorCode);
-		}
-
+		CheckAndStoreError(bytesSent == SOCKET_ERROR, "send");
 		return bytesSent;
 	}
 
 	inline const auto Receive(const ::SOCKET socket, char* buffer, const ::std::int32_t length, const ::std::int32_t flags) {
 		const auto bytesReceived = ::recv(socket, buffer, length, flags);
-		if (bytesReceived == SOCKET_ERROR) {
-			mErrorCode = ::WSAGetLastError();
-			mErrorMessage = "Receiving failed with error: " + GetErrorMessageFromErrorCode(mErrorCode);
-		}
-
+		CheckAndStoreError(bytesReceived == SOCKET_ERROR, "recv");
 		return bytesReceived;
 	}
 
 	inline const bool Bind(const ::SOCKET socket, const struct ::sockaddr_in& hint) {
-		mErrorCode = ::bind(socket, (struct ::sockaddr*) & hint, sizeof(hint));
-		if (mErrorCode == SOCKET_ERROR) {
-			mErrorCode = ::WSAGetLastError();
-			mErrorMessage = "Binding failed with error: " + GetErrorMessageFromErrorCode(mErrorCode);
-		}
-
-		return mErrorCode != SOCKET_ERROR;
+		const auto result = ::bind(socket, (struct ::sockaddr*) & hint, sizeof(hint));
+		CheckAndStoreError(result == SOCKET_ERROR, "bind");
+		return !result;
 	}
 
-	inline const auto Listen(const ::SOCKET socket, const ::std::int32_t backlog) {
-		mErrorCode = ::listen(socket, backlog);
-		if (mErrorCode == SOCKET_ERROR) {
-			mErrorCode = ::WSAGetLastError();
-			mErrorMessage = "Listening failed with error: " + GetErrorMessageFromErrorCode(mErrorCode);
-		}
-
-		return !mErrorCode;
+	inline const bool Listen(const ::SOCKET socket, const ::std::int32_t backlog) {
+		const auto result = ::listen(socket, backlog);
+		CheckAndStoreError(result == SOCKET_ERROR, "listen");
+		return !result;
 	}
 
 	inline const auto Accept(const ::SOCKET socket, struct ::sockaddr_in& hint, ::std::int32_t& length) {
 		const auto client = ::accept(socket, (struct ::sockaddr*) & hint, &length);
-		if (client == INVALID_SOCKET) {
-			mErrorCode = ::WSAGetLastError();
-			mErrorMessage = "Accepting failed with error: " + GetErrorMessageFromErrorCode(mErrorCode);
-		}
-
+		CheckAndStoreError(client == INVALID_SOCKET, "accept");
 		return client;
 	}
 
 	inline const bool Close(const ::SOCKET socket) {
-		mErrorCode = ::closesocket(socket);
-		if (mErrorCode == SOCKET_ERROR) {
-			mErrorCode = ::WSAGetLastError();
-			mErrorMessage = "Closing failed with error: " + GetErrorMessageFromErrorCode(mErrorCode);
-		}
-
-		return mErrorCode != SOCKET_ERROR;
+		const auto result = CLOSE_SOCKET(socket);
+		CheckAndStoreError(result == SOCKET_ERROR, "close");
+		return !result;
 	}
 
 	inline const auto Shutdown(const ::SOCKET socket, const ::std::int32_t how) {
-		mErrorCode = ::shutdown(socket, how);
-		if (mErrorCode == SOCKET_ERROR) {
-			mErrorCode = ::WSAGetLastError();
-			mErrorMessage = "Shutting down failed with error: " + GetErrorMessageFromErrorCode(mErrorCode);
-		}
-
-		return mErrorCode != SOCKET_ERROR;
+		const auto result = ::shutdown(socket, how);
+		CheckAndStoreError(result == SOCKET_ERROR, "shutdown");
+		return !result;
 	}
 
 	inline const auto GetSocketInfo(struct ::sockaddr_in& hint) {
@@ -184,31 +187,43 @@ public:
 		char service[NI_MAXSERV];
 		::memset(service, 0, NI_MAXSERV);
 
-		if (::getnameinfo((struct ::sockaddr*) & hint, sizeof(hint), host, NI_MAXHOST, service, NI_MAXSERV, 0)) {
-			::inet_ntop(AF_INET, &hint.sin_addr, host, NI_MAXHOST);
-			return ::std::tuple<::std::string, ::std::string>(host, ::std::to_string(::ntohs(hint.sin_port)));
+		const auto result1 = ::getnameinfo((struct ::sockaddr*) & hint, sizeof(hint), host, NI_MAXHOST, service, NI_MAXSERV, 0);
+		if (!result1) {
+			return ::std::tuple<::std::string, ::std::string>(host, service);
+		} else {
+			CheckAndStoreError(true, "getnameinfo");
 		}
 
-		return ::std::tuple<::std::string, ::std::string>(host, service);
+		const auto result2 = ::inet_ntop(AF_INET, &hint.sin_addr, host, NI_MAXHOST);
+		if (result2) {
+			return ::std::tuple<::std::string, ::std::string>(host, ::std::to_string(::ntohs(hint.sin_port)));
+		} else {
+			CheckAndStoreError(true, "inet_ntop");
+		}
+
+		return ::std::tuple<::std::string, ::std::string>("", "");
 	}
 
 private:
 	inline void Initialize() {
+#ifdef _WIN32
 		mCount++;
 
 		if (mIsInitialized) {
 			return;
 		}
 
-		mErrorCode = ::WSAStartup(MAKEWORD(2, 2), &mWSADATA);
-		if (!mErrorCode) {
-			mIsInitialized = true;
+		const auto result = ::WSAStartup(MAKEWORD(2, 2), &mWSADATA);
+		if (result) {
+			CheckAndStoreError(true, "Windows Sockets API initialization");
 		} else {
-			mErrorMessage = "Windows Sockets API initialization failed with error: " + GetErrorMessageFromErrorCode(mErrorCode);
+			mIsInitialized = true;
 		}
+#endif // _WIN32
 	}
 
 	inline void Uninitialize() {
+#ifdef _WIN32
 		if (--mCount) {
 			return;
 		}
@@ -217,17 +232,28 @@ private:
 			return;
 		}
 
-		mErrorCode = ::WSACleanup();
-		if (!mErrorCode) {
-			mIsInitialized = false;
+		const auto result = ::WSACleanup();
+		if (result == SOCKET_ERROR) {
+			CheckAndStoreError(true, "Windows Sockets API uninitialization");
 		} else {
-			mErrorMessage = "Windows Sockets API uninitialization failed with error: " + GetErrorMessageFromErrorCode(mErrorCode);
+			mIsInitialized = false;
+		}
+#endif // _WIN32
+	}
+
+	inline void CheckAndStoreError(const bool fail, const ::std::string& what) {
+		if (fail) {
+			mErrorCode = errnum;
+			mErrorMessage = what + " failed with error: " + GetErrorMessageFromErrorCode(mErrorCode);
 		}
 	}
 
+#ifdef _WIN32
+	static inline ::WSADATA mWSADATA{};
 	static inline ::std::uint16_t mCount = 0;
 	static inline bool mIsInitialized = false;
-	static inline ::WSADATA mWSADATA{};
+#endif // _WIN32
+
 	static inline ::std::int32_t mErrorCode = 0;
-	static inline ::std::string mErrorMessage = "All Clear BRA!";
+	static inline ::std::string mErrorMessage = "All Clear BRAH!";
 };
