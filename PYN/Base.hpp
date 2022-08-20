@@ -5,6 +5,7 @@
 #include <string>
 
 #include <WinSock2.h>
+#include <WS2tcpip.h>
 #pragma comment(lib, "WS2_32.lib")
 
 class Base
@@ -42,11 +43,15 @@ public:
 		return mErrorCode;
 	}
 
+	inline auto& GetErrorMessage() const {
+		return mErrorMessage;
+	}
+
 	inline auto& GetWSADATA() const {
 		return mWSADATA;
 	}
 
-	inline ::std::string GetErrorMessageFromCode(const ::std::int32_t errorCode)
+	inline ::std::string GetErrorMessageFromErrorCode(const ::std::int32_t errorCode)
 	{
 		if (!errorCode) {
 			return "";
@@ -68,6 +73,38 @@ public:
 		return errorMessageAsString;
 	}
 
+	inline auto CreateHint(const ::std::uint16_t family, const ::std::uint16_t port, const char* address) {
+		struct ::sockaddr_in hint;
+		::memset(&hint, 0, sizeof(hint));
+
+		hint.sin_family = family;
+		hint.sin_port = ::htons(port);
+		if (::inet_pton(family, address, &hint.sin_addr) == -1) {
+			mErrorCode = ::WSAGetLastError();
+			mErrorMessage = "Hint creation failed with error: " + GetErrorMessageFromErrorCode(mErrorCode);
+		}
+
+		return hint;
+	}
+
+	inline auto CreateSocket(const ::std::int32_t af, const ::std::int32_t type, const ::std::int32_t protocol) {
+		auto socket = ::socket(af, type, protocol);
+		if (socket == INVALID_SOCKET) {
+			mErrorCode = ::WSAGetLastError();
+			mErrorMessage = "Socket creation failed with error: " + GetErrorMessageFromErrorCode(mErrorCode);
+		}
+
+		return socket;
+	}
+
+	inline void Connect(const ::SOCKET socket, const struct ::sockaddr_in& hint) {
+		mErrorCode = ::connect(socket, (struct ::sockaddr*) & hint, sizeof(hint));
+		if (mErrorCode == SOCKET_ERROR) {
+			mErrorCode = ::WSAGetLastError();
+			mErrorMessage = "Socket connection failed with error: " + GetErrorMessageFromErrorCode(mErrorCode);
+		}
+	}
+
 private:
 	inline void Initialize() {
 		mCount++;
@@ -80,7 +117,7 @@ private:
 		if (!mErrorCode) {
 			mIsInitialized = true;
 		} else {
-			mErrorMessage = "Windows Sockets API initialization failed with error: " + GetErrorMessageFromCode(mErrorCode);
+			mErrorMessage = "Windows Sockets API initialization failed with error: " + GetErrorMessageFromErrorCode(mErrorCode);
 		}
 	}
 
@@ -97,7 +134,7 @@ private:
 		if (!mErrorCode) {
 			mIsInitialized = false;
 		} else {
-			mErrorMessage = "Windows Sockets API uninitialization failed with error: " + GetErrorMessageFromCode(mErrorCode);
+			mErrorMessage = "Windows Sockets API uninitialization failed with error: " + GetErrorMessageFromErrorCode(mErrorCode);
 		}
 	}
 
@@ -105,5 +142,5 @@ private:
 	static inline bool mIsInitialized = false;
 	static inline ::WSADATA mWSADATA{};
 	static inline ::std::int32_t mErrorCode = 0;
-	static inline ::std::string mErrorMessage = "No errors occured.";
+	static inline ::std::string mErrorMessage = "All Clear BRA!";
 };

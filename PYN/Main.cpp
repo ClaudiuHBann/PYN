@@ -9,4 +9,5 @@ int main() {
 /*
 	TO DO:
 		- handle base class operators overloading
+		- not thread safe
 */
