@@ -9,6 +9,5 @@ int main() {
 /*
 	TO DO:
 		- not thread safe
-		- check parameters
 		- check defines for linux
 */

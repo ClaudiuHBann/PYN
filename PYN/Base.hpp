@@ -1,6 +1,21 @@
 #pragma once
 
 #include <string>
+#include <typeinfo>
+
+#define GET_LOCATION "file \"" << __FILE__ << "\" in function '" << __func__ << "' at line '" << __LINE__ << '\''
+#define PARAMETER_FROM_IS_NULL(p) ::std::string(::std::string(typeid(p).name()) + " '" + #p + "' parameter from method '" + __func__ + "' call is null!")
+
+#define CHECK_STORE_AND_RETURN(pred, param) \
+if(pred) { \
+    SetErrorMessage(PARAMETER_FROM_IS_NULL(param)); \
+	return; \
+}
+#define CHECK_STORE_AND_RETURN_X(pred, param, x) \
+if(pred) { \
+    SetErrorMessage(PARAMETER_FROM_IS_NULL(param)); \
+	return x; \
+}
 
 #ifdef _WIN32
 
@@ -116,6 +131,8 @@ public:
 	}
 
 	inline auto CreateHint(const ::std::uint16_t family, const ::std::uint16_t port, const char* address) {
+		CHECK_STORE_AND_RETURN_X(!address, address, struct ::sockaddr_in());
+
 		struct ::sockaddr_in hint;
 		::memset(&hint, 0, sizeof(hint));
 
@@ -133,24 +150,32 @@ public:
 	}
 
 	inline const bool Connect(const ::SOCKET socket, const struct ::sockaddr_in& hint) {
+		CHECK_STORE_AND_RETURN_X(!&hint, hint, false);
+
 		const auto result = ::connect(socket, (struct ::sockaddr*) & hint, sizeof(hint));
 		CheckAndStoreError(result == SOCKET_ERROR, "connect");
 		return !result;
 	}
 
 	inline const auto Send(const ::SOCKET socket, const char* buffer, const ::std::int32_t length, const ::std::int32_t flags) {
+		CHECK_STORE_AND_RETURN_X(!buffer, buffer, -1);
+
 		const auto bytesSent = ::send(socket, buffer, length, flags);
 		CheckAndStoreError(bytesSent == SOCKET_ERROR, "send");
 		return bytesSent;
 	}
 
 	inline const auto Receive(const ::SOCKET socket, char* buffer, const ::std::int32_t length, const ::std::int32_t flags) {
+		CHECK_STORE_AND_RETURN_X(!buffer, buffer, -1);
+
 		const auto bytesReceived = ::recv(socket, buffer, length, flags);
 		CheckAndStoreError(bytesReceived == SOCKET_ERROR, "recv");
 		return bytesReceived;
 	}
 
 	inline const bool Bind(const ::SOCKET socket, const struct ::sockaddr_in& hint) {
+		CHECK_STORE_AND_RETURN_X(!&hint, hint, false);
+
 		const auto result = ::bind(socket, (struct ::sockaddr*) & hint, sizeof(hint));
 		CheckAndStoreError(result == SOCKET_ERROR, "bind");
 		return !result;
@@ -163,6 +188,9 @@ public:
 	}
 
 	inline const auto Accept(const ::SOCKET socket, struct ::sockaddr_in& hint, ::std::int32_t& length) {
+		CHECK_STORE_AND_RETURN_X(!&hint, hint, INVALID_SOCKET);
+		CHECK_STORE_AND_RETURN_X(!&length, length, INVALID_SOCKET);
+
 		const auto client = ::accept(socket, (struct ::sockaddr*) & hint, &length);
 		CheckAndStoreError(client == INVALID_SOCKET, "accept");
 		return client;
@@ -180,7 +208,9 @@ public:
 		return !result;
 	}
 
-	inline const auto GetSocketInfo(struct ::sockaddr_in& hint) {
+	inline const ::std::tuple<::std::string, ::std::string> GetSocketInfo(struct ::sockaddr_in& hint) {
+		CHECK_STORE_AND_RETURN_X(!&hint, hint, {});
+
 		char host[NI_MAXHOST];
 		::memset(host, 0, NI_MAXHOST);
 
@@ -189,19 +219,19 @@ public:
 
 		const auto result1 = ::getnameinfo((struct ::sockaddr*) & hint, sizeof(hint), host, NI_MAXHOST, service, NI_MAXSERV, 0);
 		if (!result1) {
-			return ::std::tuple<::std::string, ::std::string>(host, service);
+			return { host, service };
 		} else {
 			CheckAndStoreError(true, "getnameinfo");
 		}
 
 		const auto result2 = ::inet_ntop(AF_INET, &hint.sin_addr, host, NI_MAXHOST);
 		if (result2) {
-			return ::std::tuple<::std::string, ::std::string>(host, ::std::to_string(::ntohs(hint.sin_port)));
+			return { host, ::std::to_string(::ntohs(hint.sin_port)) };
 		} else {
 			CheckAndStoreError(true, "inet_ntop");
 		}
 
-		return ::std::tuple<::std::string, ::std::string>("", "");
+		return {};
 	}
 
 private:
@@ -246,6 +276,10 @@ private:
 			mErrorCode = errnum;
 			mErrorMessage = what + " failed with error: " + GetErrorMessageFromErrorCode(mErrorCode);
 		}
+	}
+
+	inline void SetErrorMessage(const ::std::string& errorMessage) {
+		mErrorMessage = errorMessage;
 	}
 
 #ifdef _WIN32
