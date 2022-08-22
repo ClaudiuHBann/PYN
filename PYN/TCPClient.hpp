@@ -12,8 +12,6 @@ public:
 		FAMILY = AF_INET
 	};
 
-	inline TCPClient() = default;
-
 	inline TCPClient(const ::std::string& IP, const ::std::uint16_t port) {
 		Connect(IP, port);
 	}

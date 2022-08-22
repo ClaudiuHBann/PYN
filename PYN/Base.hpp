@@ -31,8 +31,13 @@ if(pred) { \
 
 #elif defined(__linux__)
 
-#include <errno.h>
 #include <string.h>
+#include <tuple>
+
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netdb.h>
 
 #endif // OS
 
@@ -140,7 +145,7 @@ public:
 
 #elif defined(__linux__)
 
-		errorMessageAsString.assign(strerror(errnum));
+		errorMessageAsString.assign(strerror(ERROR_CODE));
 
 #endif // OS
 
@@ -148,7 +153,7 @@ public:
 	}
 
 	inline auto Hint(const ::std::uint16_t family, const ::std::uint16_t port, const char* address) {
-		CHECK_STORE_AND_RETURN_X(!address, address, struct ::sockaddr_in());
+		CHECK_STORE_AND_RETURN_X(!address, address, ::sockaddr_in());
 
 		struct ::sockaddr_in hint;
 		::memset(&hint, 0, sizeof(hint));
@@ -242,7 +247,12 @@ public:
 		CHECK_STORE_AND_RETURN_X(!&hint, hint, INVALID_SOCKET);
 		CHECK_STORE_AND_RETURN_X(!&length, length, INVALID_SOCKET);
 
-		const auto client = ::accept(socket, (struct ::sockaddr*) & hint, &length);
+
+		const auto client = ::accept(socket, (struct ::sockaddr*) & hint,
+#ifdef __linux__
+		(::std::uint32_t*)
+#endif
+			& length);
 		CheckAndStoreError(client == INVALID_SOCKET, "accept");
 		return client;
 	}
