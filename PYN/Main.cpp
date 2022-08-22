@@ -14,6 +14,5 @@ int main() {
 /*
 	TO DO:
 		- not thread safe
-		- check defines for linux
-		- tcp client error checking is bad
+		- check INVALID_SOCKET and SOCKET_ERROR defines
 */

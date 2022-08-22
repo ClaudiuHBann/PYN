@@ -120,8 +120,10 @@ public:
 	}
 #endif // _WIN32
 
-	inline ::std::string GetErrorMessageFromErrorCode(const ::std::int32_t errorCode) const
+	inline ::std::string GetErrorMessageFromErrorCode(const ::std::int32_t errorCode)
 	{
+		ClearError();
+
 		if (!errorCode) {
 			return "";
 		}
@@ -140,8 +142,12 @@ public:
 			nullptr
 		);
 
-		errorMessageAsString.assign(errorMessage, size);
-		::LocalFree(errorMessage);
+		if (size) {
+			errorMessageAsString.assign(errorMessage, size);
+			CheckAndStoreError(::LocalFree(errorMessage), "LocalFree");
+		} else {
+			CheckAndStoreError(true, "FormatMessageA");
+		}
 
 #elif defined(__linux__)
 
@@ -150,9 +156,11 @@ public:
 #endif // OS
 
 		return errorMessageAsString;
-	}
+		}
 
 	inline auto Hint(const ::std::uint16_t family, const ::std::uint16_t port, const char* address) {
+		ClearError();
+
 		CHECK_STORE_AND_RETURN_X(!address, address, ::sockaddr_in());
 
 		struct ::sockaddr_in hint;
@@ -166,12 +174,16 @@ public:
 	}
 
 	inline const auto Socket(const ::std::int32_t af, const ::std::int32_t type, const ::std::int32_t protocol) {
+		ClearError();
+
 		const auto socket = ::socket(af, type, protocol);
 		CheckAndStoreError(socket == INVALID_SOCKET, "socket");
 		return socket;
 	}
 
 	inline const bool Connect(const ::SOCKET socket, const struct ::sockaddr_in& hint) {
+		ClearError();
+
 		CHECK_STORE_AND_RETURN_X(!&hint, hint, false);
 
 		const auto result = ::connect(socket, (struct ::sockaddr*) & hint, sizeof(hint));
@@ -180,6 +192,8 @@ public:
 	}
 
 	inline const auto Send(const ::SOCKET socket, const char* buffer, const ::std::int32_t length, const ::std::int32_t flags) {
+		ClearError();
+
 		CHECK_STORE_AND_RETURN_X(!buffer, buffer, -1);
 
 		const auto bytesSent = ::send(socket, buffer, length, flags);
@@ -188,6 +202,8 @@ public:
 	}
 
 	const auto SendAll(const ::SOCKET socket, const char* buffer, const ::std::int32_t length, const ::std::int32_t flags) {
+		ClearError();
+
 		CHECK_STORE_AND_RETURN_X(!buffer, buffer, false);
 
 		auto bytesSentTotal = 0;
@@ -205,6 +221,8 @@ public:
 	}
 
 	inline const auto Receive(const ::SOCKET socket, char* buffer, const ::std::int32_t length, const ::std::int32_t flags) {
+		ClearError();
+
 		CHECK_STORE_AND_RETURN_X(!buffer, buffer, -1);
 
 		const auto bytesReceived = ::recv(socket, buffer, length, flags);
@@ -213,6 +231,8 @@ public:
 	}
 
 	const auto ReceiveAll(const ::SOCKET socket, char* buffer, const ::std::int32_t length, const ::std::int32_t flags) {
+		ClearError();
+
 		CHECK_STORE_AND_RETURN_X(!buffer, buffer, false);
 
 		auto bytesReceivedTotal = 0;
@@ -230,6 +250,8 @@ public:
 	}
 
 	inline const bool Bind(const ::SOCKET socket, const struct ::sockaddr_in& hint) {
+		ClearError();
+
 		CHECK_STORE_AND_RETURN_X(!&hint, hint, false);
 
 		const auto result = ::bind(socket, (struct ::sockaddr*) & hint, sizeof(hint));
@@ -238,15 +260,18 @@ public:
 	}
 
 	inline const bool Listen(const ::SOCKET socket, const ::std::int32_t backlog) {
+		ClearError();
+
 		const auto result = ::listen(socket, backlog);
 		CheckAndStoreError(result == SOCKET_ERROR, "listen");
 		return !result;
 	}
 
 	inline const auto Accept(const ::SOCKET socket, struct ::sockaddr_in& hint, ::std::int32_t& length) {
+		ClearError();
+
 		CHECK_STORE_AND_RETURN_X(!&hint, hint, INVALID_SOCKET);
 		CHECK_STORE_AND_RETURN_X(!&length, length, INVALID_SOCKET);
-
 
 		const auto client = ::accept(socket, (struct ::sockaddr*) & hint,
 #ifdef __linux__
@@ -258,18 +283,24 @@ public:
 	}
 
 	inline const bool Close(const ::SOCKET socket) {
+		ClearError();
+
 		const auto result = CLOSE_SOCKET(socket);
 		CheckAndStoreError(result == SOCKET_ERROR, "close");
 		return !result;
 	}
 
 	inline const auto Shutdown(const ::SOCKET socket, const ::std::int32_t how) {
+		ClearError();
+
 		const auto result = ::shutdown(socket, how);
 		CheckAndStoreError(result == SOCKET_ERROR, "shutdown");
 		return !result;
 	}
 
 	inline const ::std::tuple<::std::string, ::std::string> GetHostAndService(struct ::sockaddr_in& hint) {
+		ClearError();
+
 		CHECK_STORE_AND_RETURN_X(!&hint, hint, {});
 
 		char host[NI_MAXHOST];
@@ -281,8 +312,6 @@ public:
 		const auto result1 = ::getnameinfo((struct ::sockaddr*) & hint, sizeof(hint), host, NI_MAXHOST, service, NI_MAXSERV, 0);
 		if (!result1) {
 			return { host, service };
-		} else {
-			CheckAndStoreError(true, "getnameinfo");
 		}
 
 		const auto result2 = ::inet_ntop(AF_INET, &hint.sin_addr, host, NI_MAXHOST);
@@ -297,6 +326,8 @@ public:
 
 private:
 	inline void Initialize() {
+		ClearError();
+
 #ifdef _WIN32
 		mCount++;
 
@@ -314,6 +345,8 @@ private:
 	}
 
 	inline void Deinitialize() {
+		ClearError();
+
 #ifdef _WIN32
 		if (--mCount) {
 			return;
@@ -343,6 +376,11 @@ private:
 		mErrorMessage = errorMessage;
 	}
 
+	inline void ClearError() {
+		mErrorCode = 0;
+		mErrorMessage = "All Clear BRAH!";
+	}
+
 #ifdef _WIN32
 	static inline ::WSADATA mWSADATA{};
 	static inline ::std::uint16_t mCount = 0;
@@ -351,4 +389,4 @@ private:
 
 	static inline ::std::int32_t mErrorCode = 0;
 	static inline ::std::string mErrorMessage = "All Clear BRAH!";
-};
+	};
