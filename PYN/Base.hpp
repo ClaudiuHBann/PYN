@@ -53,9 +53,9 @@ if(pred) { \
 
 #elif defined(__linux__)
 
-#define SOCKET std::uint64_t
+#define SOCKET int
 
-#define INVALID_SOCKET 0
+#define INVALID_SOCKET -1
 #define SOCKET_ERROR -1
 
 #define ERROR_CODE errno

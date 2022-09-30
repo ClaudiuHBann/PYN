@@ -14,5 +14,4 @@ int main() {
 /*
 	TO DO:
 		- not thread safe
-		- check INVALID_SOCKET and SOCKET_ERROR defines
 */
